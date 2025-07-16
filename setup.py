@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 try:
     setup(
-        name="importscanner",
+        name="py-import-scanner",
         version="0.1.0",
         description="CLI tool to list and classify Python imports in a project.",
         long_description=open("README.md", encoding="utf-8").read(),

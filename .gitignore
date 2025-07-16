@@ -1,0 +1,66 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+*.pyd
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.whl
+*.tar.gz
+*.egg
+pip-wheel-metadata/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+test-results/
+.pytest_cache/
+
+# Logs and local environment
+*.log
+*.env
+.env.*
+venv/
+venv*/ 
+ENV/
+env/
+env*/ 
+.idea/
+.vscode/
+*.code-workspace
+
+# PyCharm project settings
+*.iml
+.idea/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# macOS + Windows files
+.DS_Store
+Thumbs.db
+
+# mypy
+.mypy_cache/
+
+# pypirc credentials (optional)
+.pypirc
