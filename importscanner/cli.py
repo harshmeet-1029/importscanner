@@ -4,17 +4,16 @@ import sys
 import logging
 import argparse
 from pathlib import Path
-
+from functools import lru_cache
 import importlib.metadata
 from stdlib_list import stdlib_list
 
-# ──────────────────────────────
 # Optional Submodule to Package Mapping
-# ──────────────────────────────
 SUBMODULE_TO_PACKAGE = {
     "pkg_resources": "setuptools",
-    # Add more if needed
+    # Extend this as needed
 }
+
 
 # ──────────────────────────────
 # Logger Setup
@@ -39,10 +38,34 @@ def setup_logger(enable_file_log=False):
 
     return logger
 
-# ──────────────────────────────
-# Utility Functions
-# ──────────────────────────────
 
+# ──────────────────────────────
+# Caching & Discovery
+# ──────────────────────────────
+@lru_cache()
+def get_all_installed_top_level_modules() -> set:
+    top_level_modules = set()
+    for dist in importlib.metadata.distributions():
+        try:
+            top_level_txt = dist.read_text("top_level.txt")
+            if top_level_txt:
+                top_level_modules.update(
+                    line.strip() for line in top_level_txt.splitlines() if line.strip()
+                )
+            else:
+                files = dist.files or []
+                for file in files:
+                    if str(file).endswith("__init__.py"):
+                        top_level = str(file).split("/")[0].split("\\")[0]
+                        top_level_modules.add(top_level)
+        except Exception:
+            continue
+    return top_level_modules
+
+
+# ──────────────────────────────
+# Detection Logic
+# ──────────────────────────────
 def is_stdlib(module_name: str) -> bool:
     try:
         version_str = f"{sys.version_info.major}.{sys.version_info.minor}"
@@ -51,17 +74,29 @@ def is_stdlib(module_name: str) -> bool:
         logger.warning(f"Failed to check if '{module_name}' is stdlib: {e}")
         return False
 
+
+@lru_cache()
 def is_installed_package(module_name: str) -> bool:
     try:
-        actual_name = SUBMODULE_TO_PACKAGE.get(module_name, module_name)
+        mod = module_name.lower()
+        installed = {m.lower() for m in get_all_installed_top_level_modules()}
+        if mod in installed:
+            return True
+
+        actual_name = SUBMODULE_TO_PACKAGE.get(mod, mod)
         importlib.metadata.version(actual_name)
         return True
+
     except importlib.metadata.PackageNotFoundError:
         return False
     except Exception as e:
         logger.warning(f"Error checking installed package for '{module_name}': {e}")
         return False
 
+
+# ──────────────────────────────
+# File Parsing
+# ──────────────────────────────
 def extract_imports_from_file(file_path: str) -> set:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -80,6 +115,11 @@ def extract_imports_from_file(file_path: str) -> set:
                 imports.add(node.module.split(".")[0])
     return imports
 
+
+def is_local_module(module_name: str) -> bool:
+    return not is_stdlib(module_name) and not is_installed_package(module_name)
+
+
 def scan_directory(path: str) -> set:
     all_imports = set()
     logger.info(f"📂 Scanning directory: {path}")
@@ -92,6 +132,7 @@ def scan_directory(path: str) -> set:
     logger.debug(f"🔍 Total unique imports found: {len(all_imports)}")
     return all_imports
 
+
 def classify_imports(imports: set):
     stdlib = set()
     third_party = set()
@@ -102,10 +143,13 @@ def classify_imports(imports: set):
             stdlib.add(module)
         elif is_installed_package(module):
             third_party.add(module)
-        else:
+        elif is_local_module(module):
             local.add(module)
+        else:
+            third_party.add(module)
 
     return stdlib, third_party, local
+
 
 def save_requirements(third_party: set):
     logger.info("💾 Saving requirements.txt...")
@@ -122,10 +166,10 @@ def save_requirements(third_party: set):
     except Exception as e:
         logger.error(f"❌ Failed to save requirements.txt: {e}")
 
-# ──────────────────────────────
-# Entry Point
-# ──────────────────────────────
 
+# ──────────────────────────────
+# CLI Entry Point
+# ──────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
         prog="list-imports",
@@ -144,25 +188,19 @@ Examples:
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
-        "path",
-        nargs="?",
-        default=".",
-        help="Path to the Python project (default: current directory)",
+        "path", nargs="?", default=".", help="Directory to scan (default: current)"
     )
     parser.add_argument(
         "--save",
         action="store_true",
-        help="Save third-party packages to a requirements.txt file",
+        help="Save third-party packages to requirements.txt",
     )
     parser.add_argument(
-        "--log",
-        action="store_true",
-        help="Enable logging to importscanner.log (default: disabled)",
+        "--log", action="store_true", help="Enable logging to importscanner.log"
     )
 
     args = parser.parse_args()
 
-    # Initialize logger based on --log flag
     global logger
     logger = setup_logger(enable_file_log=args.log)
 
@@ -177,25 +215,17 @@ Examples:
         stdlib, third_party, local = classify_imports(all_imports)
 
         print("\n📦 Third-Party Packages (installed via pip):")
-        if third_party:
-            for mod in sorted(third_party):
-                print(f"  - {mod}")
-        else:
-            print("  (None detected)")
+        print(
+            "  - " + "\n  - ".join(sorted(third_party))
+            if third_party
+            else "  (None detected)"
+        )
 
         print("\n📁 Local Modules (your own project's files/modules):")
-        if local:
-            for mod in sorted(local):
-                print(f"  - {mod}")
-        else:
-            print("  (None detected)")
+        print("  - " + "\n  - ".join(sorted(local)) if local else "  (None detected)")
 
         print("\n📚 Standard Library (built-in Python modules):")
-        if stdlib:
-            for mod in sorted(stdlib):
-                print(f"  - {mod}")
-        else:
-            print("  (None detected)")
+        print("  - " + "\n  - ".join(sorted(stdlib)) if stdlib else "  (None detected)")
 
         if args.save:
             save_requirements(third_party)
@@ -203,6 +233,7 @@ Examples:
     except Exception as e:
         logger.exception(f"❌ Unexpected error: {e}")
         print("❌ An unexpected error occurred. Check importscanner.log for details.")
+
 
 if __name__ == "__main__":
     main()
